@@ -48,12 +48,12 @@ class UserRepository {
     async findOrCreateGoogleUser({ googleId, email, name, avatar }) {
         let user = await User.findOne({ $or: [{ googleId }, { email }] });
         if (user) {
-            // Link Google ID if not already linked
             if (!user.googleId) { user.googleId = googleId; await user.save(); }
             return user;
         }
         return User.create({ googleId, email, name, avatar, role: 'user', isApproved: true });
     }
+
 
     async countByRole(role) {
         return User.countDocuments({ role });

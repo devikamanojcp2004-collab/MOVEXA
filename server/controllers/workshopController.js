@@ -1,6 +1,19 @@
 const workshopRepository = require('../repositories/workshopRepository');
 const bookingRepository = require('../repositories/bookingRepository');
 
+// Helper: ensure workshop date is at least tomorrow
+const validateWorkshopDateTime = (date) => {
+    if (!date) return null; // let model validation catch missing field
+    const selected = new Date(date);
+    selected.setHours(0, 0, 0, 0);
+    const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (isNaN(selected.getTime())) return 'Invalid date format.';
+    if (selected < tomorrow) return 'Workshop date must be at least tomorrow.';
+    return null;
+};
+
 // @desc    Get all approved workshops (public, filterable)
 // @route   GET /api/workshops
 const getWorkshops = async (req, res) => {
@@ -28,6 +41,9 @@ const getWorkshop = async (req, res) => {
 // @route   POST /api/workshops
 const createWorkshop = async (req, res) => {
     try {
+        const dateErr = validateWorkshopDateTime(req.body.date);
+        if (dateErr) return res.status(400).json({ message: dateErr });
+
         const workshop = await workshopRepository.create({
             ...req.body,
             instructor: req.user._id,
@@ -48,6 +64,11 @@ const updateWorkshop = async (req, res) => {
         if (req.user.role !== 'admin' && workshop.instructor._id.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'Not authorized to update this workshop' });
         }
+
+        const dateToCheck = req.body.date || workshop.date?.toISOString().split('T')[0];
+        const dateErr = validateWorkshopDateTime(dateToCheck);
+        if (dateErr) return res.status(400).json({ message: dateErr });
+
         const updated = await workshopRepository.update(req.params.id, req.body);
         res.json(updated);
     } catch (error) {

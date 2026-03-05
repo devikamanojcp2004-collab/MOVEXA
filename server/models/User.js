@@ -44,6 +44,7 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: '',
     },
+
 }, { timestamps: true });
 
 // Auto-set isApproved: dancers start unapproved, everyone else is approved

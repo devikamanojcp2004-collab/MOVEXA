@@ -20,8 +20,8 @@ app.use(cors({
     origin: process.env.CLIENT_URL || 'http://localhost:5173',
     credentials: true,   // Required for HTTP-only cookies to be sent cross-origin
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());   // Parse HTTP-only cookies from requests
 
 // Serve uploaded avatar images

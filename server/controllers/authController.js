@@ -1,5 +1,8 @@
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 const userRepository = require('../repositories/userRepository');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Helper: create token, set HTTP-only cookie, send response
 const sendTokenCookie = (user, statusCode, res) => {
@@ -42,7 +45,7 @@ const register = async (req, res) => {
         if (existing) {
             return res.status(400).json({ message: 'User already exists with this email' });
         }
-        const allowedRole = ['user', 'dancer'].includes(role) ? role : 'user';
+        const allowedRole = ['user'].includes(role) ? role : 'user';
         const user = await userRepository.create({ name, email, password, role: allowedRole });
         sendTokenCookie(user, 201, res);
     } catch (error) {
@@ -61,6 +64,9 @@ const login = async (req, res) => {
         const user = await userRepository.findByEmail(email);
         if (!user || !(await user.matchPassword(password))) {
             return res.status(401).json({ message: 'Invalid email or password' });
+        }
+        if (user.role === 'dancer') {
+            return res.status(403).json({ message: 'Access denied. Dancer accounts cannot log in here.' });
         }
         sendTokenCookie(user, 200, res);
     } catch (error) {
@@ -109,18 +115,17 @@ const updateProfile = async (req, res) => {
     }
 };
 
-// @desc    Google OAuth – verify token, find or create user
+// @desc    Google OAuth – verify credential token, find or create user
 // @route   POST /api/auth/google
 const googleAuth = async (req, res) => {
-    const { idToken } = req.body;
-    if (!idToken) return res.status(400).json({ message: 'ID token required' });
+    const { credential } = req.body;
+    if (!credential) return res.status(400).json({ message: 'Google credential required' });
     try {
-        // Verify Google ID token via Google's tokeninfo endpoint
-        const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
-        const payload = await response.json();
-        if (payload.error || !payload.email) {
-            return res.status(401).json({ message: 'Invalid Google token' });
-        }
+        const ticket = await googleClient.verifyIdToken({
+            idToken: credential,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        const payload = ticket.getPayload();
         const user = await userRepository.findOrCreateGoogleUser({
             googleId: payload.sub,
             email: payload.email,
@@ -129,7 +134,8 @@ const googleAuth = async (req, res) => {
         });
         sendTokenCookie(user, 200, res);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Google auth error:', error.message);
+        res.status(401).json({ message: 'Invalid Google credential', detail: error.message });
     }
 };
 
