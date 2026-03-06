@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { OAuth2Client } = require('google-auth-library');
 const userRepository = require('../repositories/userRepository');
+const Otp = require('../models/Otp');
+const { sendOtpEmail } = require('../utils/emailService');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -33,7 +36,7 @@ const sendTokenCookie = (user, statusCode, res) => {
     res.status(statusCode).json({ user: userData });
 };
 
-// @desc    Register
+// @desc    Register (legacy – kept for backward-compat, not used by the OTP flow)
 // @route   POST /api/auth/register
 const register = async (req, res) => {
     const { name, email, password, role } = req.body;
@@ -45,10 +48,99 @@ const register = async (req, res) => {
         if (existing) {
             return res.status(400).json({ message: 'User already exists with this email' });
         }
-        const allowedRole = ['user'].includes(role) ? role : 'user';
+        const allowedRole = ['user', 'dancer'].includes(role) ? role : 'user';
         const user = await userRepository.create({ name, email, password, role: allowedRole });
         sendTokenCookie(user, 201, res);
     } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// ─── OTP-based Registration ──────────────────────────────────────────────────
+
+// @desc    Step 1 – validate details, generate & email OTP
+// @route   POST /api/auth/send-otp
+const sendOtp = async (req, res) => {
+    const { name, email, password, role } = req.body;
+    try {
+        if (!name || !email || !password) {
+            return res.status(400).json({ message: 'Please fill all required fields' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters' });
+        }
+
+        // Block if email already registered
+        const existing = await userRepository.findByEmail(email);
+        if (existing) {
+            return res.status(400).json({ message: 'User already exists with this email' });
+        }
+
+        // Generate a 6-digit OTP
+        const plainOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        const hashedOtp = await bcrypt.hash(plainOtp, 10);
+
+        // Upsert: remove any existing OTP for this email, then save a fresh one
+        await Otp.deleteMany({ email: email.toLowerCase() });
+        await Otp.create({
+            email: email.toLowerCase(),
+            otp: hashedOtp,
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+            name,
+            password,   // stored plain – will be hashed by User pre-save hook
+            role: ['user', 'dancer'].includes(role) ? role : 'user',
+        });
+
+        // Email the OTP
+        await sendOtpEmail(email, plainOtp, name);
+
+        res.status(200).json({ message: 'OTP sent successfully' });
+    } catch (error) {
+        console.error('sendOtp error:', error.message);
+        res.status(500).json({ message: 'Failed to send OTP. Please try again.' });
+    }
+};
+
+// @desc    Step 2 – verify OTP and create the user account
+// @route   POST /api/auth/verify-otp
+const verifyOtpAndRegister = async (req, res) => {
+    const { email, otp } = req.body;
+    try {
+        if (!email || !otp) {
+            return res.status(400).json({ message: 'Email and OTP are required' });
+        }
+
+        const record = await Otp.findOne({ email: email.toLowerCase() });
+        if (!record) {
+            return res.status(400).json({ message: 'OTP expired or not found. Please request a new code.' });
+        }
+
+        const isMatch = await record.verifyOtp(otp);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid OTP. Please check the code and try again.' });
+        }
+
+        // Double-check email isn't taken (edge case: registered while OTP was pending)
+        const existing = await userRepository.findByEmail(email);
+        if (existing) {
+            await Otp.deleteMany({ email: email.toLowerCase() });
+            return res.status(400).json({ message: 'User already exists with this email' });
+        }
+
+        // Create the user using the data stored in the OTP record
+        const user = await userRepository.create({
+            name: record.name,
+            email: record.email,
+            password: record.password,
+            role: record.role,
+        });
+
+        // Clean up OTP record
+        await Otp.deleteMany({ email: email.toLowerCase() });
+
+        sendTokenCookie(user, 201, res);
+    } catch (error) {
+        console.error('verifyOtpAndRegister error:', error.message);
         res.status(500).json({ message: error.message });
     }
 };
@@ -64,9 +156,6 @@ const login = async (req, res) => {
         const user = await userRepository.findByEmail(email);
         if (!user || !(await user.matchPassword(password))) {
             return res.status(401).json({ message: 'Invalid email or password' });
-        }
-        if (user.role === 'dancer') {
-            return res.status(403).json({ message: 'Access denied. Dancer accounts cannot log in here.' });
         }
         sendTokenCookie(user, 200, res);
     } catch (error) {
@@ -139,4 +228,4 @@ const googleAuth = async (req, res) => {
     }
 };
 
-module.exports = { register, login, logout, getMe, updateProfile, googleAuth };
+module.exports = { register, login, logout, getMe, updateProfile, googleAuth, sendOtp, verifyOtpAndRegister };

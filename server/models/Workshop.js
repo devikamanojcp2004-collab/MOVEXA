@@ -44,7 +44,7 @@ const workshopSchema = new mongoose.Schema({
     },
     image: {
         type: String,
-        default: 'https://images.unsplash.com/photo-1546548729-47090eda4a0b?q=80&w=2070&auto=format&fit=crop',
+        default: '/workshop-default.jpg',
     },
     instructor: {
         type: mongoose.Schema.Types.ObjectId,
