@@ -80,5 +80,41 @@ const approveDancer = async (req, res) => {
     }
 };
 
-module.exports = { getAllUsers, updateUserRole, deleteUser, getStats, getPendingDancers, approveDancer };
+// @desc    Get all dancers (pending and approved)
+const getAllDancers = async (req, res) => {
+    try {
+        const dancers = await userRepository.findAllDancers();
+        res.json(dancers);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Reject a pending dancer account (soft delete)
+const rejectDancer = async (req, res) => {
+    try {
+        const dancer = await userRepository.softDelete(req.params.id);
+        if (!dancer) return res.status(404).json({ message: 'Dancer not found' });
+        res.json({ message: 'Dancer application rejected' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Toggle block status of a user
+const toggleBlockStatus = async (req, res) => {
+    try {
+        const { isBlocked } = req.body;
+        if (req.params.id === req.user._id.toString()) {
+            return res.status(400).json({ message: 'Cannot block yourself' });
+        }
+        const user = await userRepository.toggleBlockStatus(req.params.id, isBlocked);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        res.json({ message: `User ${isBlocked ? 'blocked' : 'unblocked'} successfully`, user });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { getAllUsers, updateUserRole, deleteUser, getStats, getPendingDancers, approveDancer, toggleBlockStatus, getAllDancers, rejectDancer };
 

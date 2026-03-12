@@ -138,6 +138,10 @@ const verifyOtpAndRegister = async (req, res) => {
         // Clean up OTP record
         await Otp.deleteMany({ email: email.toLowerCase() });
 
+        if (user.isBlocked) {
+            return res.status(403).json({ message: 'Your account has been blocked. Please contact support.' });
+        }
+
         sendTokenCookie(user, 201, res);
     } catch (error) {
         console.error('verifyOtpAndRegister error:', error.message);
@@ -156,6 +160,9 @@ const login = async (req, res) => {
         const user = await userRepository.findByEmail(email);
         if (!user || !(await user.matchPassword(password))) {
             return res.status(401).json({ message: 'Invalid email or password' });
+        }
+        if (user.isBlocked) {
+            return res.status(403).json({ message: 'Your account has been blocked. Please contact support.' });
         }
         sendTokenCookie(user, 200, res);
     } catch (error) {
@@ -223,6 +230,9 @@ const googleAuth = async (req, res) => {
             avatar: payload.picture || '',
             role: allowedRole,
         });
+        if (user.isBlocked) {
+            return res.status(403).json({ message: 'Your account has been blocked. Please contact support.' });
+        }
         sendTokenCookie(user, 200, res);
     } catch (error) {
         console.error('Google auth error:', error.message);

@@ -66,6 +66,10 @@ class UserRepository {
     async countByRole(role) {
         return User.countDocuments({ role, isDeleted: { $ne: true } });
     }
+
+    async toggleBlockStatus(id, isBlocked) {
+        return User.findByIdAndUpdate(id, { isBlocked }, { new: true }).select('-password');
+    }
 }
 
 module.exports = new UserRepository();
