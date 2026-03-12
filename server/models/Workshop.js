@@ -65,6 +65,10 @@ const workshopSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
+    isDeleted: {
+        type: Boolean,
+        default: false,
+    },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Workshop', workshopSchema);

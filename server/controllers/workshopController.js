@@ -1,16 +1,20 @@
 const workshopRepository = require('../repositories/workshopRepository');
 const bookingRepository = require('../repositories/bookingRepository');
 
-// Helper: ensure workshop date is at least tomorrow
-const validateWorkshopDateTime = (date) => {
+// Helper: ensure workshop datetime is at least 24 hours from now
+const validateWorkshopDateTime = (date, time) => {
     if (!date) return null; // let model validation catch missing field
-    const selected = new Date(date);
-    selected.setHours(0, 0, 0, 0);
-    const tomorrow = new Date();
-    tomorrow.setHours(0, 0, 0, 0);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    if (isNaN(selected.getTime())) return 'Invalid date format.';
-    if (selected < tomorrow) return 'Workshop date must be at least tomorrow.';
+
+    // Combine date + time if time is provided, otherwise use start of day
+    const dateTimeStr = time ? `${date}T${time}` : `${date}T00:00:00`;
+    const selected = new Date(dateTimeStr);
+
+    if (isNaN(selected.getTime())) return 'Invalid date or time format.';
+
+    const minAllowed = new Date(Date.now() + 24 * 60 * 60 * 1000); // now + 24h
+    if (selected < minAllowed) {
+        return 'Workshop must be scheduled at least 24 hours from now.';
+    }
     return null;
 };
 
@@ -41,13 +45,13 @@ const getWorkshop = async (req, res) => {
 // @route   POST /api/workshops
 const createWorkshop = async (req, res) => {
     try {
-        const dateErr = validateWorkshopDateTime(req.body.date);
+        const dateErr = validateWorkshopDateTime(req.body.date, req.body.time);
         if (dateErr) return res.status(400).json({ message: dateErr });
 
         const workshop = await workshopRepository.create({
             ...req.body,
             instructor: req.user._id,
-            status: 'pending',
+            status: 'approved',   // auto-approved – no admin review needed
         });
         res.status(201).json(workshop);
     } catch (error) {
@@ -66,7 +70,8 @@ const updateWorkshop = async (req, res) => {
         }
 
         const dateToCheck = req.body.date || workshop.date?.toISOString().split('T')[0];
-        const dateErr = validateWorkshopDateTime(dateToCheck);
+        const timeToCheck = req.body.time || workshop.time;
+        const dateErr = validateWorkshopDateTime(dateToCheck, timeToCheck);
         if (dateErr) return res.status(400).json({ message: dateErr });
 
         const updated = await workshopRepository.update(req.params.id, req.body);
@@ -76,7 +81,7 @@ const updateWorkshop = async (req, res) => {
     }
 };
 
-// @desc    Delete workshop
+// @desc    Soft-delete workshop (marks isDeleted:true, keeps data in DB)
 // @route   DELETE /api/workshops/:id
 const deleteWorkshop = async (req, res) => {
     try {
@@ -85,9 +90,8 @@ const deleteWorkshop = async (req, res) => {
         if (req.user.role !== 'admin' && workshop.instructor._id.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'Not authorized' });
         }
-        await workshopRepository.delete(req.params.id);
-        await bookingRepository.deleteByWorkshop(req.params.id);
-        res.json({ message: 'Workshop deleted successfully' });
+        await workshopRepository.softDelete(req.params.id);
+        res.json({ message: 'Workshop removed successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

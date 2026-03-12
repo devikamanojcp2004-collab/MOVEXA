@@ -207,7 +207,7 @@ const updateProfile = async (req, res) => {
 // @desc    Google OAuth – verify credential token, find or create user
 // @route   POST /api/auth/google
 const googleAuth = async (req, res) => {
-    const { credential } = req.body;
+    const { credential, role } = req.body;
     if (!credential) return res.status(400).json({ message: 'Google credential required' });
     try {
         const ticket = await googleClient.verifyIdToken({
@@ -215,11 +215,13 @@ const googleAuth = async (req, res) => {
             audience: process.env.GOOGLE_CLIENT_ID,
         });
         const payload = ticket.getPayload();
+        const allowedRole = ['user', 'dancer'].includes(role) ? role : 'user';
         const user = await userRepository.findOrCreateGoogleUser({
             googleId: payload.sub,
             email: payload.email,
             name: payload.name || payload.email.split('@')[0],
             avatar: payload.picture || '',
+            role: allowedRole,
         });
         sendTokenCookie(user, 200, res);
     } catch (error) {

@@ -2,7 +2,7 @@ const Workshop = require('../models/Workshop');
 
 class WorkshopRepository {
     async findAll({ style, location, search, page = 1, limit = 12, status = 'approved' } = {}) {
-        const query = { status };
+        const query = { status, isDeleted: { $ne: true } };
         if (style) query.style = style;
         if (location) query.location = { $regex: location, $options: 'i' };
         if (search) {
@@ -25,16 +25,16 @@ class WorkshopRepository {
     }
 
     async findByInstructor(instructorId) {
-        return Workshop.find({ instructor: instructorId }).sort({ createdAt: -1 });
+        return Workshop.find({ instructor: instructorId, isDeleted: { $ne: true } }).sort({ createdAt: -1 });
     }
 
     async findByInstructorPublic(instructorId) {
-        return Workshop.find({ instructor: instructorId, status: 'approved' })
+        return Workshop.find({ instructor: instructorId, status: 'approved', isDeleted: { $ne: true } })
             .sort({ date: 1 });
     }
 
     async findAllAdmin(status) {
-        const query = status ? { status } : {};
+        const query = status ? { status, isDeleted: { $ne: true } } : { isDeleted: { $ne: true } };
         return Workshop.find(query)
             .populate('instructor', 'name email avatar')
             .sort({ createdAt: -1 });
@@ -55,8 +55,8 @@ class WorkshopRepository {
             .populate('instructor', 'name avatar');
     }
 
-    async delete(id) {
-        return Workshop.findByIdAndDelete(id);
+    async softDelete(id) {
+        return Workshop.findByIdAndUpdate(id, { isDeleted: true }, { new: true });
     }
 
     async incrementBookings(id) {
@@ -68,11 +68,11 @@ class WorkshopRepository {
     }
 
     async countAll() {
-        return Workshop.countDocuments();
+        return Workshop.countDocuments({ isDeleted: { $ne: true } });
     }
 
     async countByStatus(status) {
-        return Workshop.countDocuments({ status });
+        return Workshop.countDocuments({ status, isDeleted: { $ne: true } });
     }
 }
 

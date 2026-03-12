@@ -2,7 +2,7 @@ const User = require('../models/User');
 
 class UserRepository {
     async findById(id) {
-        return User.findById(id).select('-password');
+        return User.findOne({ _id: id, isDeleted: { $ne: true } }).select('-password');
     }
 
     async findByIdWithPassword(id) {
@@ -10,7 +10,7 @@ class UserRepository {
     }
 
     async findByEmail(email) {
-        return User.findOne({ email });
+        return User.findOne({ email, isDeleted: { $ne: true } });
     }
 
     async create(data) {
@@ -21,20 +21,20 @@ class UserRepository {
         return User.findByIdAndUpdate(id, data, { new: true, runValidators: true }).select('-password');
     }
 
-    async delete(id) {
-        return User.findByIdAndDelete(id);
+    async softDelete(id) {
+        return User.findByIdAndUpdate(id, { isDeleted: true }, { new: true });
     }
 
     async findAll() {
-        return User.find({}).select('-password').sort({ createdAt: -1 });
+        return User.find({ isDeleted: { $ne: true } }).select('-password').sort({ createdAt: -1 });
     }
 
     async findAllDancers() {
-        return User.find({ role: 'dancer' }).select('-password').sort({ name: 1 });
+        return User.find({ role: 'dancer', isDeleted: { $ne: true } }).select('-password').sort({ name: 1 });
     }
 
     async findPendingDancers() {
-        return User.find({ role: 'dancer', isApproved: false }).select('-password').sort({ createdAt: -1 });
+        return User.find({ role: 'dancer', isApproved: false, isDeleted: { $ne: true } }).select('-password').sort({ createdAt: -1 });
     }
 
     async approveDancer(id) {
@@ -45,18 +45,26 @@ class UserRepository {
         return User.findOne({ googleId });
     }
 
-    async findOrCreateGoogleUser({ googleId, email, name, avatar }) {
-        let user = await User.findOne({ $or: [{ googleId }, { email }] });
+    async findOrCreateGoogleUser({ googleId, email, name, avatar, role = 'user' }) {
+        let user = await User.findOne({ $or: [{ googleId }, { email }], isDeleted: { $ne: true } });
         if (user) {
-            if (!user.googleId) { user.googleId = googleId; await user.save(); }
+            // Link Google account if not already linked
+            if (!user.googleId) user.googleId = googleId;
+            // If a non-default role was explicitly requested (register flow) and differs from current, update it
+            if (role !== 'user' && user.role !== role) {
+                user.role = role;
+                // isApproved will be reset by the pre-save hook (dancers start unapproved)
+            }
+            await user.save();
             return user;
         }
-        return User.create({ googleId, email, name, avatar, role: 'user', isApproved: true });
+        // Brand-new user: create with selected role
+        return User.create({ googleId, email, name, avatar, role, isApproved: role !== 'dancer' });
     }
 
 
     async countByRole(role) {
-        return User.countDocuments({ role });
+        return User.countDocuments({ role, isDeleted: { $ne: true } });
     }
 }
 

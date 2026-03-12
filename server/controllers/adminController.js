@@ -27,16 +27,14 @@ const updateUserRole = async (req, res) => {
     }
 };
 
-// @desc    Delete user and all their data
+// @desc    Soft-delete user (marks isDeleted:true, keeps data in DB)
 const deleteUser = async (req, res) => {
     try {
         if (req.params.id === req.user._id.toString()) {
             return res.status(400).json({ message: 'Cannot delete yourself' });
         }
-        await userRepository.delete(req.params.id);
-        await workshopRepository.findAll({ status: undefined }); // cleanup handled separately
-        await bookingRepository.deleteByUser(req.params.id);
-        res.json({ message: 'User deleted successfully' });
+        await userRepository.softDelete(req.params.id);
+        res.json({ message: 'User removed successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
